@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AETHER // Kinetic Particle Universe</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    
+    <style>
+        :root {
+            --cyan: #00f2ff;
+            --blue: #0066ff;
+            --gold: #ffcc00;
+            --bg: #020205;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg);
+            font-family: 'Space Mono', 'Consolas', monospace;
+            color: white;
+            user-select: none;
+        }
+
+        /* Scanline Overlay Effect */
+        body::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 4px, 3px 100%;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        #video-container {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 180px;
+            height: 135px;
+            border: 1px solid rgba(0, 242, 255, 0.5);
+            border-radius: 4px;
+            overflow: hidden;
+            z-index: 30;
+            transform: scaleX(-1);
+            background: #000;
+            display: none; 
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
+        }
+        #input-video { width: 100%; height: 100%; object-fit: cover; opacity: 0.6; }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 25;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 50px;
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-top: 1px solid rgba(0, 242, 255, 0.3);
+            padding-top: 20px;
+        }
+
+        .title-group h1 {
+            margin: 0;
+            font-size: 2.5rem;
+            letter-spacing: 12px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, #fff, var(--cyan), var(--gold));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 700;
+            filter: drop-shadow(0 0 10px rgba(0, 242, 255, 0.5));
+        }
+
+        .status-badge {
+            font-size: 0.65rem;
+            color: var(--cyan);
+            border: 1px solid var(--cyan);
+            padding: 5px 15px;
+            border-radius: 2px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-top: 15px;
+            display: inline-block;
+            background: rgba(0, 242, 255, 0.1);
+        }
+
+        .controls-panel {
+            pointer-events: auto;
+            background: rgba(5, 5, 10, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 242, 255, 0.2);
+            padding: 10px;
+            border-radius: 4px;
+            width: fit-content;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-self: center;
+            margin-bottom: 30px;
+            justify-content: center;
+        }
+
+        .mode-btn {
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.5);
+            padding: 12px 20px;
+            border-radius: 2px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            text-transform: uppercase;
+            font-size: 0.65rem;
+            letter-spacing: 2px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .mode-btn::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 0%;
+            height: 2px;
+            background: var(--cyan);
+            transition: width 0.3s ease;
+        }
+
+        .mode-btn:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(0, 242, 255, 0.5);
+        }
+
+        .mode-btn.active {
+            color: var(--cyan);
+            border-color: var(--cyan);
+            background: rgba(0, 242, 255, 0.1);
+        }
+        
+        .mode-btn.active::after {
+            width: 100%;
+        }
+
+        .upload-btn {
+            border-color: var(--gold);
+            color: var(--gold);
+        }
+        
+        .upload-btn:hover {
+            background: rgba(255, 204, 0, 0.1);
+            border-color: var(--gold);
+        }
+
+        .info-panel {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.4);
+            max-width: 300px;
+            line-height: 1.8;
+            text-align: right;
+        }
+
+        .loading-screen {
+            position: fixed;
+            inset: 0;
+            background: var(--bg);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1.2s cubic-bezier(0.7, 0, 0.3, 1);
+        }
+
+        .loader-ring {
+            width: 60px;
+            height: 60px;
+            border: 1px solid rgba(0, 242, 255, 0.2);
+            border-top: 1px solid var(--cyan);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 25px;
+            position: relative;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .hint {
+            position: absolute;
+            bottom: 140px;
+            left: 50%;
+            transform: translateX(-50%);
+            text-align: center;
+            opacity: 0.5;
+            font-size: 0.7rem;
+            letter-spacing: 4px;
+            pointer-events: none;
+            text-transform: uppercase;
+        }
+
+        #file-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="loading-screen" id="loader">
+        <div class="loader-ring"></div>
+        <p style="letter-spacing: 8px; font-size: 0.7rem; color: var(--cyan);">INITIALIZING AETHER CORE v4.2</p>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="video-container">
+        <video id="input-video"></video>
+    </div>
+
+    <input type="file" id="file-input" accept=".obj,.png,.jpg,.jpeg,.webp">
+
+    <div id="ui-layer">
+        <div class="header">
+            <div class="title-group">
+                <h1>AETHER</h1>
+                <div class="status-badge" id="tracking-status">Syncing Neural Link...</div>
+            </div>
+            <div class="info-panel">
+                <span style="color: var(--cyan)">[ STATUS ]</span> OPERATIONAL<br>
+                <span style="color: var(--gold)">[ VOXEL_DENSITY ]</span> 100,000 pts<br>
+                <span style="color: var(--cyan)">[ LATENCY ]</span> <span id="latency">0.4ms</span>
+            </div>
+        </div>
+
+        <div class="hint" id="gesture-hint">
+            Ready for interaction.
+        </div>
+
+        <div class="controls-panel">
+            <button class="mode-btn active" onclick="setMode('chaos')">Chaos</button>
+            <button class="mode-btn" onclick="setMode('sphere')">Sphere</button>
+            <button class="mode-btn" onclick="setMode('cube')">Monolith</button>
+            <button class="mode-btn" onclick="setMode('dna')">Helix</button>
+            <button class="mode-btn" onclick="setMode('sculpt')">Sculpt</button>
+            <button class="mode-btn" id="custom-mode-btn" style="display:none" onclick="setMode('custom')">Reconstruction</button>
+            <button class="mode-btn upload-btn" onclick="document.getElementById('file-input').click()">Upload Data</button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * AETHER: 100K PARTICLE KINETIC ENGINE
+         * v4.2 - Real-time Voxel & Image Reconstruction
+         */
+
+        let scene, camera, renderer, particles, clock;
+        let videoElement;
+        const particleCount = 100000;
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        const targets = new Float32Array(particleCount * 3);
+        const colors = new Float32Array(particleCount * 3);
+        const originalColors = new Float32Array(particleCount * 3);
+        
+        let customVertices = null;
+        let customColors = null;
+        let currentMode = 'chaos';
+        let interactionPoint = new THREE.Vector3(0, 0, 0);
+        let interactionStrength = 0; 
+        let isCameraActive = false;
+
+        function init() {
+            try {
+                clock = new THREE.Clock();
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x020205);
+                scene.fog = new THREE.FogExp2(0x020205, 0.0018);
+
+                camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 2000);
+                camera.position.z = 500;
+
+                renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+                createParticles();
+                setupHandTracking();
+                setupEventListeners();
+                
+                setTimeout(() => {
+                    const loader = document.getElementById('loader');
+                    if (loader) {
+                        loader.style.opacity = '0';
+                        setTimeout(() => loader.remove(), 1200);
+                    }
+                }, 1500);
+
+                animate();
+            } catch (e) {
+                console.error("Aether Core failure:", e);
+            }
+        }
+
+        function createParticleTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            gradient.addColorStop(0.1, 'rgba(200, 255, 255, 0.8)');
+            gradient.addColorStop(0.3, 'rgba(0, 242, 255, 0.2)');
+            gradient.addColorStop(0.6, 'rgba(0, 102, 255, 0.05)');
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 128, 128);
+            ctx.beginPath();
+            ctx.arc(64, 64, 4, 0, Math.PI * 2);
+            ctx.fillStyle = "#fff";
+            ctx.fill();
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createParticles() {
+            const geometry = new THREE.BufferGeometry();
+            const colorCyan = new THREE.Color(0x00f2ff); 
+            const colorBlue = new THREE.Color(0x0066ff); 
+            const colorGold = new THREE.Color(0xffcc00);
+
+            for (let i = 0; i < particleCount; i++) {
+                const x = (Math.random() - 0.5) * 800;
+                const y = (Math.random() - 0.5) * 800;
+                const z = (Math.random() - 0.5) * 800;
+                positions[i * 3] = x;
+                positions[i * 3 + 1] = y;
+                positions[i * 3 + 2] = z;
+                targets[i * 3] = x;
+                targets[i * 3 + 1] = y;
+                targets[i * 3 + 2] = z;
+
+                const rand = Math.random();
+                let mixedColor;
+                if (rand > 0.95) mixedColor = colorGold;
+                else if (rand > 0.5) mixedColor = colorCyan.clone().lerp(new THREE.Color(0xffffff), 0.3);
+                else mixedColor = colorCyan.clone().lerp(colorBlue, Math.random());
+                
+                colors[i * 3] = mixedColor.r;
+                colors[i * 3 + 1] = mixedColor.g;
+                colors[i * 3 + 2] = mixedColor.b;
+
+                originalColors[i * 3] = colors[i * 3];
+                originalColors[i * 3 + 1] = colors[i * 3 + 1];
+                originalColors[i * 3 + 2] = colors[i * 3 + 2];
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 3.5,
+                map: createParticleTexture(),
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const isImage = file.type.startsWith('image/');
+            document.getElementById('tracking-status').innerText = isImage ? "Analyzing Pixel Data..." : "Decompressing Object...";
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                if (isImage) {
+                    processImage(e.target.result);
+                } else {
+                    processOBJ(e.target.result);
+                }
+            };
+            
+            if (isImage) reader.readAsDataURL(file);
+            else reader.readAsText(file);
+        }
+
+        function processImage(dataUrl) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                
+                // Keep ratio but limit size for sampling
+                const maxDim = 320; 
+                let w = img.width, h = img.height;
+                if (w > h) { h = (h / w) * maxDim; w = maxDim; }
+                else { w = (w / h) * maxDim; h = maxDim; }
+                
+                canvas.width = w;
+                canvas.height = h;
+                ctx.drawImage(img, 0, 0, w, h);
+                const data = ctx.getImageData(0, 0, w, h).data;
+
+                const vertices = [];
+                const imgColors = [];
+                
+                // Downsample pixels to match particle count
+                const totalPixels = w * h;
+                const step = Math.max(1, Math.floor(totalPixels / (particleCount * 0.8)));
+
+                for (let i = 0; i < totalPixels; i += step) {
+                    const r = data[i * 4];
+                    const g = data[i * 4 + 1];
+                    const b = data[i * 4 + 2];
+                    const a = data[i * 4 + 3];
+
+                    if (a > 50) { // Alpha threshold
+                        const x = (i % w) - w / 2;
+                        const y = h / 2 - Math.floor(i / w);
+                        // Z depth based on luminosity
+                        const z = (r + g + b) / 3 * 0.2;
+                        
+                        vertices.push(x * 1.5, y * 1.5, z);
+                        imgColors.push(r / 255, g / 255, b / 255);
+                    }
+                }
+
+                customVertices = new Float32Array(vertices);
+                customColors = new Float32Array(imgColors);
+                
+                finalizeCustomMode("Image Pixelation Successful");
+            };
+            img.src = dataUrl;
+        }
+
+        function processOBJ(text) {
+            const lines = text.split('\n');
+            const vertices = [];
+            lines.forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                if (parts[0] === 'v') vertices.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+            });
+
+            if (vertices.length === 0) return;
+
+            let minX = Infinity, minY = Infinity, minZ = Infinity;
+            let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+            for (let i = 0; i < vertices.length; i+=3) {
+                minX = Math.min(minX, vertices[i]); maxX = Math.max(maxX, vertices[i]);
+                minY = Math.min(minY, vertices[i+1]); maxY = Math.max(maxY, vertices[i+1]);
+                minZ = Math.min(minZ, vertices[i+2]); maxZ = Math.max(maxZ, vertices[i+2]);
+            }
+
+            const centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2, centerZ = (minZ + maxZ) / 2;
+            const size = Math.max(maxX - minX, maxY - minY, maxZ - minZ);
+            const scale = 300 / size;
+
+            customVertices = new Float32Array(vertices.length);
+            for (let i = 0; i < vertices.length; i+=3) {
+                customVertices[i] = (vertices[i] - centerX) * scale;
+                customVertices[i+1] = (vertices[i+1] - centerY) * scale;
+                customVertices[i+2] = (vertices[i+2] - centerZ) * scale;
+            }
+            customColors = null; // Use default engine colors for OBJ
+            
+            finalizeCustomMode("Object Reconstructed");
+        }
+
+        function finalizeCustomMode(msg) {
+            document.getElementById('custom-mode-btn').style.display = "block";
+            setMode('custom');
+            document.getElementById('tracking-status').innerText = msg;
+        }
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if(btn.innerText.toLowerCase() === mode.toLowerCase() || 
+                  (mode === 'cube' && btn.innerText === 'MONOLITH') || 
+                  (mode === 'dna' && btn.innerText === 'HELIX') ||
+                  (mode === 'custom' && btn.innerText === 'RECONSTRUCTION')) {
+                    btn.classList.add('active');
+                }
+            });
+
+            const colorAttr = particles.geometry.attributes.color;
+            const size = 220;
+            
+            for (let i = 0; i < particleCount; i++) {
+                let x, y, z;
+                
+                // Handle Colors
+                if (mode === 'custom' && customColors) {
+                    const cIndex = (i % (customColors.length / 3)) * 3;
+                    colorAttr.array[i * 3] = customColors[cIndex];
+                    colorAttr.array[i * 3 + 1] = customColors[cIndex + 1];
+                    colorAttr.array[i * 3 + 2] = customColors[cIndex + 2];
+                } else {
+                    colorAttr.array[i * 3] = originalColors[i * 3];
+                    colorAttr.array[i * 3 + 1] = originalColors[i * 3 + 1];
+                    colorAttr.array[i * 3 + 2] = originalColors[i * 3 + 2];
+                }
+
+                // Handle Targets
+                if (mode === 'sphere') {
+                    const radius = 200;
+                    const phi = Math.acos(-1 + (2 * i) / particleCount);
+                    const theta = Math.sqrt(particleCount * Math.PI) * phi;
+                    x = radius * Math.cos(theta) * Math.sin(phi);
+                    y = radius * Math.sin(theta) * Math.sin(phi);
+                    z = radius * Math.cos(phi);
+                } 
+                else if (mode === 'cube') {
+                    x = (Math.random() - 0.5) * size;
+                    y = (Math.random() - 0.5) * size;
+                    z = (Math.random() - 0.5) * size;
+                    const face = Math.floor(Math.random() * 3);
+                    if(face === 0) x = (Math.random() > 0.5 ? 1 : -1) * size / 2;
+                    else if(face === 1) y = (Math.random() > 0.5 ? 1 : -1) * size / 2;
+                    else z = (Math.random() > 0.5 ? 1 : -1) * size / 2;
+                }
+                else if (mode === 'dna') {
+                    const t = (i / particleCount);
+                    const angle = t * Math.PI * 20;
+                    const strand = (i % 2 === 0) ? 0 : Math.PI;
+                    x = Math.cos(angle + strand) * 80;
+                    z = Math.sin(angle + strand) * 80;
+                    y = (t - 0.5) * 450;
+                }
+                else if (mode === 'custom' && customVertices) {
+                    const vIndex = (i % (customVertices.length / 3)) * 3;
+                    x = customVertices[vIndex];
+                    y = customVertices[vIndex + 1];
+                    z = customVertices[vIndex + 2];
+                }
+                else {
+                    x = (Math.random() - 0.5) * 800;
+                    y = (Math.random() - 0.5) * 800;
+                    z = (Math.random() - 0.5) * 800;
+                }
+
+                targets[i * 3] = x;
+                targets[i * 3 + 1] = y;
+                targets[i * 3 + 2] = z;
+            }
+            colorAttr.needsUpdate = true;
+        }
+
+        function setupHandTracking() {
+            videoElement = document.getElementById('input-video');
+            if (!window.Hands || !window.Camera) {
+                document.getElementById('tracking-status').innerText = 'Neural Link Failure - Mouse Active';
+                return;
+            }
+
+            const hands = new window.Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+
+            hands.setOptions({
+                maxNumHands: 1, modelComplexity: 1,
+                minDetectionConfidence: 0.6, minTrackingConfidence: 0.6
+            });
+
+            hands.onResults(onHandResults);
+
+            const cameraPipe = new window.Camera(videoElement, {
+                onFrame: async () => { await hands.send({image: videoElement}); },
+                width: 640, height: 480
+            });
+
+            cameraPipe.start().then(() => {
+                isCameraActive = true;
+                document.getElementById('video-container').style.display = 'block';
+                document.getElementById('tracking-status').innerText = 'Neural Link Connected';
+                document.getElementById('tracking-status').style.color = 'var(--cyan)';
+            }).catch(() => {
+                document.getElementById('tracking-status').innerText = 'System Offline - Manual Active';
+            });
+        }
+
+        function onHandResults(results) {
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                const tip = landmarks[8], thumb = landmarks[4], wrist = landmarks[0];
+
+                const targetX = (0.5 - tip.x) * 700;
+                const targetY = (0.5 - tip.y) * 550;
+                interactionPoint.set(targetX, targetY, 0);
+
+                const pinchDist = Math.hypot(tip.x - thumb.x, tip.y - thumb.y);
+                const isPinching = pinchDist < 0.07;
+                const isOpen = Math.hypot(tip.x - wrist.x, tip.y - wrist.y) > 0.4;
+
+                if (isPinching) {
+                    interactionStrength = 1.8;
+                    document.getElementById('gesture-hint').innerText = "FIELD_COLLAPSE // PINCH_DETECTION";
+                    document.getElementById('gesture-hint').style.color = "var(--gold)";
+                } else if (isOpen) {
+                    interactionStrength = -2.5;
+                    document.getElementById('gesture-hint').innerText = "KINETIC_PULSE // EXPANSION_MODE";
+                    document.getElementById('gesture-hint').style.color = "var(--cyan)";
+                } else {
+                    interactionStrength = 0.2;
+                    document.getElementById('gesture-hint').innerText = "TRACKING_ACTIVE";
+                    document.getElementById('gesture-hint').style.color = "white";
+                }
+
+                if (currentMode === 'sculpt') {
+                    const start = Math.floor(Math.random() * (particleCount - 300));
+                    for(let i = start; i < start + 300; i++) {
+                        targets[i*3] = targetX + (Math.random()-0.5)*50;
+                        targets[i*3+1] = targetY + (Math.random()-0.5)*50;
+                        targets[i*3+2] = (Math.random()-0.5)*50;
+                    }
+                }
+            } else { interactionStrength *= 0.8; }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+            const posAttr = particles.geometry.attributes.position;
+            const posArray = posAttr.array;
+
+            const lerpSpeed = 0.025, damp = 0.88;
+
+            for (let i = 0; i < particleCount; i++) {
+                const i3 = i * 3;
+                velocities[i3] += (targets[i3] - posArray[i3]) * lerpSpeed;
+                velocities[i3 + 1] += (targets[i3 + 1] - posArray[i3 + 1]) * lerpSpeed;
+                velocities[i3 + 2] += (targets[i3 + 2] - posArray[i3 + 2]) * lerpSpeed;
+
+                if (Math.abs(interactionStrength) > 0.01) {
+                    const dx = interactionPoint.x - posArray[i3], dy = interactionPoint.y - posArray[i3 + 1], dz = interactionPoint.z - posArray[i3 + 2];
+                    const distSq = dx*dx + dy*dy + dz*dz;
+                    if (distSq < 62500) {
+                        const force = (interactionStrength * 100) / (distSq + 250);
+                        velocities[i3] += dx * force; velocities[i3 + 1] += dy * force; velocities[i3 + 2] += dz * force;
+                    }
+                }
+
+                const noise = 0.015;
+                velocities[i3] += Math.sin(time * 0.5 + posArray[i3+1] * noise) * 0.04;
+                velocities[i3+1] += Math.cos(time * 0.5 + posArray[i3] * noise) * 0.04;
+
+                posArray[i3] += velocities[i3];
+                posArray[i3 + 1] += velocities[i3 + 1];
+                posArray[i3 + 2] += velocities[i3 + 2];
+
+                velocities[i3] *= damp; velocities[i3 + 1] *= damp; velocities[i3 + 2] *= damp;
+            }
+
+            posAttr.needsUpdate = true;
+            particles.rotation.y += 0.0006;
+            if (Math.random() > 0.98) document.getElementById('latency').innerText = (Math.random() * 0.8 + 0.1).toFixed(1) + 'ms';
+            renderer.render(scene, camera);
+        }
+
+        function setupEventListeners() {
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+            document.getElementById('file-input').addEventListener('change', handleFileUpload);
+            window.addEventListener('mousemove', (e) => {
+                if (!isCameraActive) {
+                    interactionPoint.x = (e.clientX / window.innerWidth - 0.5) * 700;
+                    interactionPoint.y = (0.5 - e.clientY / window.innerHeight) * 550;
+                    interactionStrength = 0.6;
+                }
+            });
+            window.addEventListener('mousedown', () => { if(!isCameraActive) interactionStrength = -4.0; });
+            window.addEventListener('mouseup', () => { if(!isCameraActive) interactionStrength = 0.6; });
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
